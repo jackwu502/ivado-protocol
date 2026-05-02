@@ -1,0 +1,18 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+.claude/
+
+# Local/private presentation and speaker materials
+talk_script.md
+build_pptx.py
+~$*.pptx
+AI Link Net（FP 应用测试）.docx
+
+# Local protocol source clones; demos install these as dependencies instead.
+foundation-protocol-main/
+ai-link-net/
+ai-link-net-main/
