@@ -19,3 +19,4 @@ matplotlib>=3.8.0
 
 # Notebooks
 jupyterlab>=4.0.0
+ipykernel>=6.29.0

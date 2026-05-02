@@ -20,22 +20,48 @@ FA is developed by **DeepWisdom**, with our group as a research collaborator.
 
 Requires **Python 3.12+** (FA / `ai-link-net` constraint).
 
+Clone the repo and create a local virtual environment:
+
 ```bash
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+git clone https://github.com/jackwu502/ivado-protocol.git
+cd ivado-protocol
 
-# FA demo — clone and install ai-link-net
-git clone https://github.com/FoundationAgents/ai-link-net.git
-pip install -e ./ai-link-net
-# (Once the repo is public, this works directly:
-#   pip install git+https://github.com/FoundationAgents/ai-link-net.git )
+python3.12 -m venv .venv
+source .venv/bin/activate
 
-# LLM credentials in .env (see .env.example for both Anthropic-direct and
-# OpenRouter routes). The agentic loop uses ANTHROPIC_API_KEY plus the
-# optional ANTHROPIC_BASE_URL and ANTHROPIC_MODEL.
-
-jupyter lab
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m ipykernel install --user --name ivado-lab --display-name "ivado-lab (3.12)"
 ```
+
+Create your local `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and fill in one credential route:
+
+```bash
+# Option 1: Anthropic direct
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+
+# Option 2: OpenRouter-compatible Anthropic endpoint
+# ANTHROPIC_BASE_URL=https://openrouter.ai/api
+# ANTHROPIC_API_KEY=sk-or-v1-...
+# ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5
+```
+
+Do not commit `.env`; it is intentionally gitignored.
+
+Start Jupyter from the repo root and select the `ivado-lab (3.12)` kernel:
+
+```bash
+python -m jupyter lab
+```
+
+Demo 3 also needs the FA reference implementation (`ai-link-net`). The install cell in `demo3_fa/03_fa_demo.ipynb` tries, in order: an already-installed package, `ALN_LOCAL_PATH`, a local clone next to this repo, and finally GitHub. If GitHub access is private for you, clone it next to this repo or set `ALN_LOCAL_PATH` in `.env`.
 
 ## Slides
 

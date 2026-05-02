@@ -49,12 +49,58 @@ def notebook(cells: list[dict]) -> dict:
     return {
         "cells": cells,
         "metadata": {
-            "kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+            "kernelspec": {"display_name": "ivado-lab (3.12)", "language": "python", "name": "ivado-lab"},
             "language_info": {"name": "python", "version": "3.12"},
         },
         "nbformat": 4,
         "nbformat_minor": 5,
     }
+
+
+SETUP_COMMON = """\
+## First-time setup
+
+Run this once in a terminal, from the directory where you want the repo:
+
+```bash
+git clone https://github.com/jackwu502/ivado-protocol.git
+cd ivado-protocol
+
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m ipykernel install --user --name ivado-lab --display-name "ivado-lab (3.12)"
+```
+
+Create your local `.env` file:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and fill in one credential route:
+
+```bash
+# Option 1: Anthropic direct
+ANTHROPIC_API_KEY=sk-ant-...
+ANTHROPIC_MODEL=claude-sonnet-4-6
+
+# Option 2: OpenRouter-compatible Anthropic endpoint
+# ANTHROPIC_BASE_URL=https://openrouter.ai/api
+# ANTHROPIC_API_KEY=sk-or-v1-...
+# ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5
+```
+
+Do not commit `.env`; it is intentionally gitignored.
+
+Start Jupyter from the repo root and select the `ivado-lab (3.12)` kernel:
+
+```bash
+python -m jupyter lab
+```
+"""
 
 
 # ============================================================================
@@ -85,19 +131,7 @@ mcp_cells = [
 
 Data backend: `yfinance` (no API key required). For production, swap to a company-maintained MCP server such as [Alpha Vantage's official one](https://mcp.alphavantage.co/).
 
-## First-time setup
-
-Run once in a terminal:
-
-```bash
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install jupyterlab
-jupyter lab
-```
-
-Set the LLM credentials in `.env` (project root). Two options:
-- **Anthropic direct:** `ANTHROPIC_API_KEY=sk-ant-...`, `ANTHROPIC_MODEL=claude-sonnet-4-6`
-- **OpenRouter (cheaper):** `ANTHROPIC_BASE_URL=https://openrouter.ai/api`, `ANTHROPIC_API_KEY=sk-or-v1-...`, `ANTHROPIC_MODEL=anthropic/claude-sonnet-4.5`"""),
+""" + SETUP_COMMON),
     code(BOOTSTRAP_COMMON + 'VIZ_MCP_SERVER = str(HERE / "viz_mcp_server.py")\n'),
     code("""%pip install -q mcp anthropic yfinance matplotlib python-dotenv
 
@@ -168,15 +202,9 @@ a2a_cells = [
 Agent: [`analyst_agent.py`](analyst_agent.py) — A2A server with an internal Claude + stock-MCP loop
 Helpers: [`a2a_helpers.py`](a2a_helpers.py)
 
-## First-time setup
+""" + SETUP_COMMON + """
 
-```bash
-python3.12 -m venv .venv && source .venv/bin/activate
-pip install jupyterlab
-jupyter lab
-```
-
-Use the same `.env` from Demo 1 (the agent reads `ANTHROPIC_*` to call Claude internally)."""),
+Use the same `.env` from Demo 1. The A2A agent reads `ANTHROPIC_*` to call Claude internally."""),
     code(BOOTSTRAP_COMMON),
     code("""%pip install -q "a2a-sdk<1.0" uvicorn httpx anthropic mcp yfinance python-dotenv
 
@@ -253,26 +281,18 @@ Source: [github.com/FoundationAgents/ai-link-net](https://github.com/FoundationA
    6. EquityAnalyst → weaves both into a brief → alice
 ```
 
-A2A would require alice (or the equity analyst) to know each callee's URL up front. Here the network has a directory of public entities, and `host.get_discoverable_entities(include_parent=True)` returns cards across hosts."""),
-    md("""## First-time setup
+A2A would require alice (or the equity analyst) to know each callee's URL up front. Here the network has a directory of public entities, and `host.get_discoverable_entities(include_parent=True)` returns cards across hosts.
 
-If you have not done these once already, run them in a terminal (not in the notebook):
+""" + SETUP_COMMON + """
 
-```bash
-# 1. Create and activate a Python 3.12 environment (required for ai-link-net)
-python3.12 -m venv .venv && source .venv/bin/activate
+Demo 3 also needs the FA reference implementation (`ai-link-net`). The install cell below tries these options in order:
 
-# 2. Install Jupyter and start it
-pip install jupyterlab
-jupyter lab
+1. Use `fp` / `aln` if they are already installed.
+2. Use `ALN_LOCAL_PATH` from `.env`, if set.
+3. Use a local clone at `./ai-link-net` or `../ai-link-net`.
+4. Install from `https://github.com/FoundationAgents/ai-link-net`.
 
-# 3. If ai-link-net is private for your account, clone it next to this repo
-#    or set ALN_LOCAL_PATH to your local clone. If it is public, the install
-#    cell below can fetch it from GitHub directly.
-git clone https://github.com/FoundationAgents/ai-link-net.git
-```
-
-Then open this notebook and run the install cell below."""),
+If GitHub access is private for you, clone `ai-link-net` next to this repo or set `ALN_LOCAL_PATH` in `.env`."""),
     code(BOOTSTRAP_COMMON),
     code(f"""assert sys.version_info >= (3, 12), "ai-link-net needs Python 3.12+"
 
