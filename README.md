@@ -7,7 +7,7 @@ Audience: statistics faculty and students.
 
 | # | Topic | Time | File |
 |---|-------|------|------|
-| 0 | Concepts | 10 min | [`slides.pptx`](slides.pptx) |
+| 0 | Concepts | 10 min | [`slides.pdf`](slides.pdf) |
 | 1 | MCP — Claude with stock-data + plotting tools | ~10 min | [`demo1_mcp/01_mcp_demo.ipynb`](demo1_mcp/01_mcp_demo.ipynb) |
 | 2 | A2A — delegate "Analyze NVDA" to an analyst agent | ~10 min | [`demo2_a2a/02_a2a_demo.ipynb`](demo2_a2a/02_a2a_demo.ipynb) |
 | 3 | FA — equity analyst discovers and calls a macro analyst on another host | ~10 min | [`demo3_fa/03_fa_demo.ipynb`](demo3_fa/03_fa_demo.ipynb) |
@@ -73,7 +73,7 @@ The Demo 3 install cell will use that local clone, or install from GitHub if it 
 
 ## Slides
 
-Use [`slides.pptx`](slides.pptx) for the concept section. The notebook demos are self-contained and can be run directly after setup.
+Use [`slides.pdf`](slides.pdf) for the concept section. The notebook demos are self-contained and can be run directly after setup.
 
 `slides.md` is an older Marp markdown version, kept for quick textual reference.
 
@@ -83,13 +83,11 @@ Each demo lives in its own folder so it is obvious which file belongs where. Cod
 
 ```
 ivado-protocol/
-├── slides.pptx                            # 10-slide deck
+├── slides.pdf                             # slide deck
 ├── slides.md                              # older Marp reference version
 ├── README.md
 ├── requirements.txt
 ├── .env / .gitignore                      # .env holds API keys (gitignored)
-├── _build_notebooks.py                    # regenerates the notebooks below
-│
 ├── shared/                                # used by 2 or more demos
 │   ├── stock_mcp_server.py                # yfinance-backed MCP tools (all demos)
 │   └── agent_runner.py                    # reusable Claude + MCP agentic loop (demos 2, 3)

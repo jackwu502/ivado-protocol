@@ -7,10 +7,16 @@ __pycache__/
 .claude/
 
 # Local/private presentation and speaker materials
-talk_script.md
+talk_script*
 build_pptx.py
+build_docx.py
+render_diagrams.py
+_build_notebooks.py
+slides.pptx
 ~$*.pptx
+~$*.docx
 AI Link Net（FP 应用测试）.docx
+figures/
 
 # Local protocol source clones; demos install these as dependencies instead.
 foundation-protocol-main/
