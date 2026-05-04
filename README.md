@@ -61,7 +61,15 @@ Start Jupyter from the repo root and select the `ivado-lab (3.12)` kernel:
 python -m jupyter lab
 ```
 
-Demo 3 also needs the FA reference implementation (`ai-link-net`). The install cell in `demo3_fa/03_fa_demo.ipynb` tries, in order: an already-installed package, `ALN_LOCAL_PATH`, a local clone next to this repo, and finally GitHub. If GitHub access is private for you, clone it next to this repo or set `ALN_LOCAL_PATH` in `.env`.
+Demo 3 also needs the FA reference implementation, [`ai-link-net`](https://github.com/FoundationAgents/ai-link-net). It will be released soon. Once it is available, clone it next to this repo:
+
+```bash
+cd ..
+git clone https://github.com/FoundationAgents/ai-link-net.git
+cd ivado-protocol
+```
+
+The Demo 3 install cell will use that local clone, or install from GitHub if it is already public.
 
 ## Slides
 

@@ -30,6 +30,12 @@ def _params(server_path: str) -> StdioServerParameters:
     return StdioServerParameters(command=sys.executable, args=[server_path])
 
 
+def _short(value: Any, limit: int = 80) -> str:
+    """Render a value as a short single-line string for trace output."""
+    s = str(value).replace("\n", " ").strip()
+    return s if len(s) <= limit else s[: limit - 1] + "…"
+
+
 async def run_agent(
     question: str,
     mcp_servers: list[str],
@@ -39,12 +45,16 @@ async def run_agent(
     extra_tool_executor: Callable[[str, dict[str, Any]], Awaitable[Any]] | None = None,
     model: str | None = None,
     max_rounds: int = 8,
+    trace: list[str] | None = None,
 ) -> str:
     """Run an agentic Claude loop and return the final text answer.
 
     `extra_tools` and `extra_tool_executor` let the caller plug in tools that
     are not MCP-backed (e.g., a "delegate to another agent" tool used by the
     FA equity analyst to call the macro analyst).
+
+    If `trace` is a list, each tool call and short result summary is appended
+    to it — useful for showing the agent's internal work to the caller.
     """
     client = Anthropic()
     model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
@@ -94,6 +104,10 @@ async def run_agent(
                 if block.type != "tool_use":
                     continue
 
+                if trace is not None:
+                    args_summary = ", ".join(f"{k}={_short(v)}" for k, v in dict(block.input).items())
+                    trace.append(f"[tool]   {block.name}({args_summary})")
+
                 if block.name in tool_to_session:
                     out = await tool_to_session[block.name].call_tool(block.name, block.input)
                     parts = []
@@ -106,9 +120,16 @@ async def run_agent(
                                 "source": {"type": "base64", "media_type": c.mimeType, "data": c.data},
                             })
                     content = parts or "ok"
+                    if trace is not None:
+                        text_preview = next(
+                            (p["text"] for p in parts if p.get("type") == "text"), ""
+                        )
+                        trace.append(f"[result] {_short(text_preview, 120)}")
                 elif extra_tool_executor is not None:
                     result = await extra_tool_executor(block.name, dict(block.input))
                     content = str(result)
+                    if trace is not None:
+                        trace.append(f"[result] {_short(str(result), 120)}")
                 else:
                     content = f"(no executor for tool {block.name!r})"
 

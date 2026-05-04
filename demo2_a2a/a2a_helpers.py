@@ -1,50 +1,22 @@
-"""Beginner-friendly helpers for the A2A demo.
+"""HTTP/JSON-RPC client helpers for the A2A demo notebook.
 
-Keeps subprocess / HTTP / JSON-RPC details out of the notebook.
+The agent itself is defined inline in the notebook and runs as an asyncio
+task in the same kernel. These helpers therefore use the *async* httpx
+client — calling sync httpx from the same kernel would deadlock the event
+loop the server needs to handle requests.
 """
 
 import json
-import subprocess
-import sys
-import time
 import uuid
 
 import httpx
 
 
-def start_agent(script_path: str, port: int = 9999, startup_timeout: float = 10.0):
-    """Start an A2A agent as a background process. Returns a handle for stop_agent()."""
-    proc = subprocess.Popen(
-        [sys.executable, script_path],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    url = f"http://localhost:{port}/.well-known/agent-card.json"
-    deadline = time.time() + startup_timeout
-    while time.time() < deadline:
-        try:
-            httpx.get(url, timeout=0.5)
-            print(f"agent started (pid={proc.pid}, port={port})")
-            return proc
-        except Exception:
-            time.sleep(0.3)
-    proc.terminate()
-    raise RuntimeError(f"agent at {script_path} failed to start within {startup_timeout}s")
-
-
-def stop_agent(proc) -> None:
-    """Stop an agent started by start_agent()."""
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-    print("agent stopped")
-
-
-def fetch_agent_card(port: int = 9999) -> dict:
+async def fetch_agent_card(port: int = 9999) -> dict:
     """Get the agent's self-description (the 'agent card')."""
-    return httpx.get(f"http://localhost:{port}/.well-known/agent-card.json", timeout=5).json()
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        r = await client.get(f"http://localhost:{port}/.well-known/agent-card.json")
+        return r.json()
 
 
 def print_agent_card(card: dict) -> None:
@@ -60,7 +32,7 @@ def print_agent_card(card: dict) -> None:
             print(f"      example: {ex!r}")
 
 
-def send_message(text: str, port: int = 9999, timeout: float = 120.0) -> dict:
+async def send_message(text: str, port: int = 9999, timeout: float = 120.0) -> dict:
     """Send one text message to an A2A agent and return the raw JSON-RPC response."""
     request = {
         "jsonrpc": "2.0",
@@ -74,7 +46,9 @@ def send_message(text: str, port: int = 9999, timeout: float = 120.0) -> dict:
             }
         },
     }
-    return httpx.post(f"http://localhost:{port}/", json=request, timeout=timeout).json()
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        r = await client.post(f"http://localhost:{port}/", json=request)
+        return r.json()
 
 
 def show_response(response: dict, raw: bool = False) -> None:
