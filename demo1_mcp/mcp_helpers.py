@@ -101,6 +101,22 @@ async def chat_with_claude(
         client = Anthropic()
         messages = [{"role": "user", "content": message}]
 
+        # ── Show what Claude actually receives as the "menu" ────────────
+        print("══ TOOL MENU SENT TO CLAUDE ══")
+        print(f"  (these schemas are auto-generated from each tool's signature + docstring)")
+        for t in tools_for_claude:
+            schema = t["input_schema"]
+            params = schema.get("properties", {})
+            param_str = ", ".join(
+                f'{k}:{v.get("type", "?")}' for k, v in params.items()
+            )
+            req = schema.get("required", [])
+            req_str = f" (required: {req})" if req else ""
+            print(f"  • {t['name']}({param_str}){req_str}")
+            desc = (t["description"] or "").strip().split("\n")[0]
+            print(f"      \"{desc}\"")
+        print("══ END MENU ══\n")
+
         print(f"YOU say:\n  {message}\n")
 
         for round_no in range(1, max_rounds + 1):
@@ -114,15 +130,22 @@ async def chat_with_claude(
                 print(f"\nCLAUDE final answer:\n  {final_text}")
                 return
 
-            print(f"[round {round_no}] CLAUDE wants to use tools:")
+            # ── Show the raw tool_use blocks Claude returned ───────────
+            print(f"[round {round_no}] CLAUDE returned (stop_reason={resp.stop_reason!r}):")
+            for block in resp.content:
+                if block.type == "tool_use":
+                    print(f"  ← tool_use  name={block.name!r}  input={dict(block.input)!r}")
+                elif block.type == "text" and block.text.strip():
+                    print(f"  ← text      {block.text.strip()[:120]!r}")
+            print(f"  (Claude picked these from the menu above — based on tool name + description)")
+
             messages.append({"role": "assistant", "content": resp.content})
             tool_results = []
             for block in resp.content:
                 if block.type != "tool_use":
                     continue
                 path, sess = tool_to_server[block.name]
-                print(f"  • {block.name}  (from {path})")
-                print(f"      arguments: {dict(block.input)}")
+                print(f"  → calling {block.name} from {path}")
                 out = await sess.call_tool(block.name, block.input)
 
                 result_blocks = []
@@ -130,13 +153,13 @@ async def chat_with_claude(
                     if getattr(c, "type", None) == "text":
                         result_blocks.append({"type": "text", "text": c.text})
                         snippet = c.text[:160].replace("\n", " ")
-                        print(f"      result (text): {snippet}")
+                        print(f"     result (text): {snippet}")
                     elif getattr(c, "type", None) == "image":
                         result_blocks.append({
                             "type": "image",
                             "source": {"type": "base64", "media_type": c.mimeType, "data": c.data},
                         })
-                        print(f"      result (image): a {c.mimeType} (shown below)")
+                        print(f"     result (image): a {c.mimeType} (shown below)")
                         display(IPImage(data=base64.b64decode(c.data)))
 
                 tool_results.append({

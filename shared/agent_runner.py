@@ -46,6 +46,7 @@ async def run_agent(
     model: str | None = None,
     max_rounds: int = 8,
     trace: list[str] | None = None,
+    agent_label: str | None = None,
 ) -> str:
     """Run an agentic Claude loop and return the final text answer.
 
@@ -58,6 +59,7 @@ async def run_agent(
     """
     client = Anthropic()
     model = model or os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+    label = f"[{agent_label}] " if agent_label else ""
 
     async with AsyncExitStack() as stack:
         sessions: list[tuple[str, ClientSession]] = []
@@ -106,7 +108,7 @@ async def run_agent(
 
                 if trace is not None:
                     args_summary = ", ".join(f"{k}={_short(v)}" for k, v in dict(block.input).items())
-                    trace.append(f"[tool]   {block.name}({args_summary})")
+                    trace.append(f"{label}[tool]   {block.name}({args_summary})")
 
                 if block.name in tool_to_session:
                     out = await tool_to_session[block.name].call_tool(block.name, block.input)
@@ -124,12 +126,12 @@ async def run_agent(
                         text_preview = next(
                             (p["text"] for p in parts if p.get("type") == "text"), ""
                         )
-                        trace.append(f"[result] {_short(text_preview, 120)}")
+                        trace.append(f"{label}[result] {_short(text_preview, 120)}")
                 elif extra_tool_executor is not None:
                     result = await extra_tool_executor(block.name, dict(block.input))
                     content = str(result)
                     if trace is not None:
-                        trace.append(f"[result] {_short(str(result), 120)}")
+                        trace.append(f"{label}[result] {_short(str(result), 120)}")
                 else:
                     content = f"(no executor for tool {block.name!r})"
 

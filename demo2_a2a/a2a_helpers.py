@@ -12,10 +12,10 @@ import uuid
 import httpx
 
 
-async def fetch_agent_card(port: int = 9999) -> dict:
-    """Get the agent's self-description (the 'agent card')."""
+async def fetch_agent_card(url: str) -> dict:
+    """Get the agent's self-description (the 'agent card') from `url`."""
     async with httpx.AsyncClient(timeout=5.0) as client:
-        r = await client.get(f"http://localhost:{port}/.well-known/agent-card.json")
+        r = await client.get(f"{url.rstrip('/')}/.well-known/agent-card.json")
         return r.json()
 
 
@@ -32,8 +32,8 @@ def print_agent_card(card: dict) -> None:
             print(f"      example: {ex!r}")
 
 
-async def send_message(text: str, port: int = 9999, timeout: float = 120.0) -> dict:
-    """Send one text message to an A2A agent and return the raw JSON-RPC response."""
+async def send_message(text: str, url: str, timeout: float = 120.0) -> dict:
+    """Send one text message to the A2A agent at `url` and return the raw JSON-RPC response."""
     request = {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
@@ -47,7 +47,7 @@ async def send_message(text: str, port: int = 9999, timeout: float = 120.0) -> d
         },
     }
     async with httpx.AsyncClient(timeout=timeout) as client:
-        r = await client.post(f"http://localhost:{port}/", json=request)
+        r = await client.post(f"{url.rstrip('/')}/", json=request)
         return r.json()
 
 
