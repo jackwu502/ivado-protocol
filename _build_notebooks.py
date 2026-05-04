@@ -828,105 +828,174 @@ Three FA primitives all came together here:
 
 In A2A, all three would have to be solved with external infrastructure. In FA, they are part of the protocol."""),
 
-    md("""## 8. Bonus — offline delivery
+    md("""## 8. Bonus — REAL FA protocol-level offline delivery (over WebSocket)
 
-A2A requires the recipient to be online when you call: send a request to a server that is down and the call **fails**. FA's design instead lets messages **queue** at the host (or at the entity) until the recipient comes back, then deliver them.
+A2A requires the recipient to be online when you call: send a request to a server that is down and the call **fails**. FA's design instead lets the **routing host queue messages** until the recipient comes back, then deliver them automatically.
 
-In our small in-process setup we don't get the full `HostServer` mailbox machinery, so we show the **same pattern at the entity layer**: a small worker entity with an `online` toggle. When offline, its handler buffers incoming messages locally; when toggled back online, the buffer is drained and processed normally.
+This section uses **`HostServer`** — the application-layer subclass that ships the full offline machinery — and runs **three real `uvicorn` instances** in this kernel (relay + 2 child hosts) talking over **localhost WebSocket**. The "go offline" trigger is a **real WebSocket close**: the relay's WebSocket loop detects the disconnect, automatically marks the child's entities `OFFLINE`, and starts queueing. When the child reconnects, the relay automatically marks them `ONLINE` and flushes the queue. Everything is FA's own code; we add zero application-layer offline logic."""),
+    code("""# Imports + persistence patches.
+# Why patch _save/_load_offline_mail_queues: HostServer wants to persist
+# the offline queue to disk by default; for an in-notebook demo we keep
+# it in-memory only.
+import uvicorn
+from fastapi import FastAPI
+from fp import EntityStatus
+from aln.app.service.host_server import HostServer
+from aln.app.api.ws import router as ws_router
+from aln.app.api.well_known import router as well_known_router
 
-In production with `HostServer` this happens automatically at the host boundary — same idea, just protocol-level instead of in our handler."""),
-    code("""# A worker entity with a manual online/offline toggle.
-# Pattern: when offline, the handler buffers messages; when online, it drains.
+patch("aln.app.service.host_server.HostServer._save_offline_mail_queues").start()
+patch("aln.app.service.host_server.HostServer._load_offline_mail_queues").start()
 
-def make_offline_capable_worker(host, name="SlowWorker"):
-    state = {"entity": None, "online": True, "pending": []}
 
-    async def _process(sender_addr, msg):
-        question = _payload_text(msg)
-        # Pretend to do real work
-        await asyncio.sleep(0.5)
-        result = f"Processed: {question!r}"
-        await state["entity"].send_message(
-            to=FPAddress(address=sender_addr),
-            message=Message(kind=MessageKind.INVOKE, payload={"text": result}),
-        )
+def _make_host_app(host_runtime: HostServer) -> FastAPI:
+    \"\"\"Minimal FastAPI app exposing /.well-known and /ws for one HostServer.\"\"\"
+    app = FastAPI()
+    app.include_router(well_known_router)
+    app.include_router(ws_router)
+    app.state.host_runtime = host_runtime
+    return app
 
-    async def handler(msg):
-        if msg.kind in FRIEND_KINDS: return
-        sender_addr = msg.metadata.get("sender_address", "")
-        if not sender_addr: return
-        if state["online"]:
-            asyncio.create_task(_process(sender_addr, msg))
-        else:
-            state["pending"].append((sender_addr, msg))
-            print(f"  [{name} OFFLINE] queued; pending = {len(state['pending'])}")
 
-    async def go_offline():
-        state["online"] = False
-        print(f"  [{name}] now OFFLINE — incoming messages will be queued")
+async def start_host(host_runtime: HostServer, port: int):
+    \"\"\"Start a uvicorn task for `host_runtime` on `port`. Returns the server handle.\"\"\"
+    config = uvicorn.Config(_make_host_app(host_runtime),
+                            host="127.0.0.1", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    server.install_signal_handlers = lambda: None
+    asyncio.create_task(server.serve())
+    for _ in range(50):
+        await asyncio.sleep(0.1)
+        if server.started: break
+    return server
 
-    async def come_back_online():
-        state["online"] = True
-        pending = state["pending"][:]
-        state["pending"].clear()
-        print(f"  [{name}] back ONLINE — draining {len(pending)} queued messages")
-        for sender_addr, msg in pending:
-            asyncio.create_task(_process(sender_addr, msg))
 
-    entity = host.register_entity(
-        name=name, kind=EntityKind.AGENT, is_public=True,
-        description="Demo worker with offline toggle.",
-        handler=handler,
+async def _no_reconnect():
+    \"\"\"No-op replacement for HostServer._reconnect_to_parent so we can
+    cleanly demonstrate offline → online transitions without auto-retry
+    fighting our manual control.\"\"\"
+    pass
+
+
+print("helpers ready")"""),
+
+    md("""### Build the subnet and connect
+
+Three HostServer instances on ports 20001/20002/20003. Children open real WebSocket connections to the relay — that's the handshake which marks their entities `ONLINE` on the relay (and triggers any pending flushes)."""),
+    code("""# Three HostServer instances
+relay  = HostServer(name="OfflineRelay",  port=20001)
+host_x = HostServer(name="OfflineHostX",  port=20002)  # alice2 lives here
+host_y = HostServer(name="OfflineHostY",  port=20003)  # worker lives here
+
+# alice2 inbox handler (filter out friend-handshake messages)
+inbox2: asyncio.Queue = asyncio.Queue()
+async def alice2_handler(msg):
+    if msg.kind not in FRIEND_KINDS:
+        await inbox2.put(msg)
+alice2 = host_x.register_entity("alice2", kind=EntityKind.HUMAN, handler=alice2_handler)
+
+# worker: tiny echo entity
+async def worker_handler(msg):
+    if msg.kind in FRIEND_KINDS: return
+    sender_addr = msg.metadata.get("sender_address", "")
+    text = msg.payload.get("text", "") if isinstance(msg.payload, dict) else ""
+    print(f"  [worker]  got '{text}' — replying")
+    await worker.send_message(
+        to=FPAddress(address=sender_addr),
+        message=Message(kind=MessageKind.INVOKE, payload={"text": f"echo: {text}"}),
     )
-    state["entity"] = entity
-    return entity, go_offline, come_back_online
+worker = host_y.register_entity(
+    "worker", kind=EntityKind.AGENT, is_public=True,
+    description="echo worker", handler=worker_handler,
+)
 
+# Disable host_y's auto-reconnect so our manual disconnect doesn't immediately re-establish
+host_y._reconnect_to_parent = _no_reconnect
 
-worker, go_offline, come_back_online = make_offline_capable_worker(host_a)
+# Start uvicorn for each host
+relay_srv  = await start_host(relay,  20001)
+host_x_srv = await start_host(host_x, 20002)
+host_y_srv = await start_host(host_y, 20003)
 
-# alice friends the worker
-await alice.send_message(
+# Children open WebSocket to the relay (real handshake)
+await host_x.connect_to_parent("http://127.0.0.1:20001")
+await host_y.connect_to_parent("http://127.0.0.1:20001")
+await asyncio.sleep(1.0)  # let WS handshakes settle
+
+print(f"relay child_clients:   {len(relay.child_clients)}")
+print(f"worker status on relay: {relay.entity_status.get(worker.address.entity_uid)}")"""),
+
+    md("""### Friend handshake + baseline call (worker ONLINE)
+
+Confirm the round-trip works while everyone is connected."""),
+    code("""await alice2.send_message(
     to=worker.entity_card,
     message=Message(kind=MessageKind.FRIEND_REQUEST,
-                    payload=FriendRequestPayload(sender_card=alice.entity_card)),
+                    payload=FriendRequestPayload(sender_card=alice2.entity_card)),
 )
-await asyncio.sleep(0.4)
-print(f"worker registered: {worker.address.address}")"""),
+await asyncio.sleep(0.8)
+print(f"alice2 friends: {list(alice2.friends.keys())}\\n")
 
-    md("""### Take the worker offline, then send 3 messages
+await alice2.send_message(
+    to=worker.entity_card,
+    message=Message(kind=MessageKind.INVOKE, payload={"text": "baseline"}),
+)
+reply = await asyncio.wait_for(inbox2.get(), timeout=5.0)
+print(f"alice2 received: {reply.payload['text']}")"""),
 
-Each message is buffered. Nothing is processed yet."""),
-    code("""await go_offline()
+    md("""### Take host_y offline by closing its WebSocket
 
-for i in range(3):
-    await alice.send_message(
+`host_y.disconnect_from_parent()` closes the WebSocket. The relay's WebSocket loop (in `aln/app/api/ws.py`) catches the disconnect → calls `remove_child_connection(host_y.uid)` → which calls `_mark_child_entities_offline` → flips `worker`'s status to `OFFLINE` on the relay. **All FA's own code; no manual status flip.**"""),
+    code("""await host_y.disconnect_from_parent()
+await asyncio.sleep(1.5)  # let the relay's WS loop notice the disconnect
+
+print(f"relay child_clients:   {len(relay.child_clients)} (should be 1)")
+print(f"worker status on relay: {relay.entity_status.get(worker.address.entity_uid)} "
+      f"(should be OFFLINE)")"""),
+
+    md("""### Send 3 messages while the worker is OFFLINE
+
+The relay's `route_mail` checks `entity_status` → sees OFFLINE → calls `_enqueue_offline_mail` → queue grows to 3. alice2 sees no failures."""),
+    code("""for i in range(3):
+    await alice2.send_message(
         to=worker.entity_card,
-        message=Message(kind=MessageKind.INVOKE, payload={"text": f"task #{i+1}"}),
+        message=Message(kind=MessageKind.INVOKE, payload={"text": f"queued-{i+1}"}),
     )
-
 await asyncio.sleep(1.0)
-print(f"alice received so far: {alice_inbox.qsize()} replies "
-      f"(should be 0 — worker is offline)")"""),
 
-    md("""### Bring the worker back online → buffer drains → replies arrive
+print(f"relay.offline_mail_queues: "
+      f"{ {k[:8]: len(v) for k, v in relay.offline_mail_queues.items()} }")
+print(f"alice2 inbox size:         {inbox2.qsize()} (should be 0)")"""),
 
-The worker's queued messages are processed and the replies flow back to alice — even though alice never re-sent anything."""),
-    code("""await come_back_online()
+    md("""### host_y reconnects → relay auto-flushes
 
-# Collect the 3 replies that the worker now produces
-for _ in range(3):
-    reply = await asyncio.wait_for(alice_inbox.get(), timeout=10)
-    print(f"  alice ← {reply.payload['text']}")"""),
+`connect_to_parent` opens a fresh WebSocket → relay's `accept_child_connection` → `_mark_child_entities_online` + `_flush_offline_queues_for_child` (both called automatically inside HostServer)."""),
+    code("""await host_y.connect_to_parent("http://127.0.0.1:20001")
+await asyncio.sleep(2.0)  # let handshake + auto-flush + worker replies + routing all complete
+
+print(f"relay child_clients:       {len(relay.child_clients)} (should be 2)")
+print(f"worker status:             {relay.entity_status.get(worker.address.entity_uid)}")
+print(f"relay.offline_mail_queues: {dict(relay.offline_mail_queues)} (should be empty)\\n")
+
+while not inbox2.empty():
+    reply = inbox2.get_nowait()
+    print(f"  alice2 ← {reply.payload['text']}")"""),
 
     md("""### What just happened
 
-- alice sent 3 messages while the worker was offline → none failed; all queued.
-- The worker came back online → drained the queue → produced replies → routed back to alice through the host network.
-- alice's code did **not** know the worker was ever offline. From her side, the messages were sent, and after a delay, the replies came back.
+- `host_y.disconnect_from_parent()` closed a real WebSocket. The relay's WebSocket loop in `aln/app/api/ws.py` detected the disconnect, called `remove_child_connection`, which called `_mark_child_entities_offline`. Worker's status on the relay became `OFFLINE` — **no manual flip from us**.
+- alice2 sent 3 messages. The relay's `route_mail` (HostServer.route_mail) checked status, saw OFFLINE, and enqueued each into `offline_mail_queues`. Again, **no application-layer code involved**.
+- `host_y.connect_to_parent(...)` opened a new WebSocket. The relay's `/ws` endpoint accepted it, called `accept_child_connection`, which called `_mark_child_entities_online` and `_flush_offline_queues_for_child`. The 3 queued mails were forwarded to host_y, the worker replied, replies routed back to alice2.
 
-This is FA's **offline-delivery pattern**: addressing by Entity ID + a queue that survives the recipient's downtime. In A2A you would have gotten a connection refused / timeout when the recipient was down, and your code would have to handle retry on its own.
+This is the FA-only architectural property at full strength: **addressing by Entity ID + protocol-level queueing keyed on lifecycle events**. Recipient can be down; sender's code does not retry; reconnect drains the queue automatically.
 
-(For a full implementation, FA's `HostServer` does this queueing at the host boundary — including across host restarts — without requiring per-entity code.)"""),
+(In production `HostServer` also persists `offline_mail_queues` to disk, so the queue survives host restarts. We patched persistence off for the in-notebook demo.)"""),
+
+    md("""### Cleanup the bonus subnet"""),
+    code("""for srv in (relay_srv, host_x_srv, host_y_srv):
+    srv.should_exit = True
+await asyncio.sleep(0.5)
+print("offline-demo subnet stopped")"""),
 
     md("""## CLI entry point
 
